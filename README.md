@@ -12,7 +12,7 @@ FastAPI + React.js Дипломна робота на тему Монітори�
 
 - `mkdir backend`
 - `cd backend`
-- Create a virtual environment: `python3 -m venv venv`
+- Create a virtual environment: `python3 -m venv venv` | `py -m venv venv`
 - Activate the virtual environment:
   - Mac/Linux: `source ./venv/bin/activate`
   - Windows: `.\venv\Scripts\activate`

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
+from controllers.getNearesPost import getNearesPost
 
 
 class Fruit(BaseModel):
@@ -39,6 +40,12 @@ def get_fruits():
 def add_fruit(fruit: Fruit):
     memory_db["fruits"].append(fruit)
     return fruit
+
+
+@app.get("/api/neares-post")
+def api_get_neares_post(lat: float, len: float):
+    # `getNearesPost` expects parameters (lat, len).
+    return getNearesPost(lat, len)
 
 
 if __name__ == "__main__":
