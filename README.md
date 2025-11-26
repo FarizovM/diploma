@@ -1,9 +1,11 @@
 # diploma
+
 FastAPI + React.js Дипломна робота на тему Моніторинг повітря
 
 ## FastAPI Setup
 
 ### Dependencies
+
 - Python 3.9+
 
 ### Setup
