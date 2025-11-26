@@ -1,0 +1,77 @@
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-diploma}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - diploma-net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+    depends_on:
+      - db
+    networks:
+      - diploma-net
+
+  prisma:
+    image: node:18
+    working_dir: /prisma
+    volumes:
+      - ./prisma:/prisma
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-diploma}?schema=public"
+    command: sh -c "npm install --silent && npx prisma generate && npx prisma migrate deploy || true && tail -f /dev/null"
+    depends_on:
+      - db
+    networks:
+      - diploma-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-diploma}"
+    depends_on:
+      - db
+      - prisma
+    networks:
+      - diploma-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_APP_API_URL: "http://localhost:8000"
+    depends_on:
+      - backend
+    networks:
+      - diploma-net
+
+volumes:
+  db_data:
+
+networks:
+  diploma-net:
+    driver: bridge

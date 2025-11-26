@@ -1,0 +1,16 @@
+// Prisma schema for the Postgres database used in docker-compose
+// Adjust models as needed later.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Fruit {
+  id   Int    @id @default(autoincrement())
+  name String
+}

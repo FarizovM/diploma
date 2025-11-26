@@ -1,0 +1,9 @@
+{
+  "name": "diploma-prisma",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "prisma": "^5.0.0",
+    "@prisma/client": "^5.0.0"
+  }
+}
