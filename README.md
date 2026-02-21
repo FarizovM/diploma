@@ -22,19 +22,3 @@ FastAPI + React.js Дипломна робота на тему Монітори�
 ### Run the API
 
 - `python main.py`
-
-
-## React Setup
-
-### Dependencies 
-- NodeJS
-
-### Setup 
-
-- `npm create vite@latest frontend --template react`
-- `cd frontend`
-- `npm install`
-
-### Run the App
-
-- `npm run dev`

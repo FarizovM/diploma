@@ -1,18 +1,17 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from controllers.getNearesPost import getNearesPost
-
+from database import engine, get_db
+from sqlalchemy.orm import Session
 
 class Fruit(BaseModel):
     name: str
 
-
 class Fruits(BaseModel):
     fruits: List[Fruit]
-
 
 app = FastAPI(debug=True)
 
@@ -35,17 +34,15 @@ memory_db = {"fruits": []}
 def get_fruits():
     return Fruits(fruits=memory_db["fruits"])
 
-
 @app.post("/api/fruits")
 def add_fruit(fruit: Fruit):
     memory_db["fruits"].append(fruit)
     return fruit
 
-
 @app.get("/api/neares-post")
-def api_get_neares_post(lat: float, len: float):
-    # `getNearesPost` expects parameters (lat, len).
-    return getNearesPost(lat, len)
+def api_get_neares_post(x: float, y: float, db: Session = Depends(get_db)):
+    # `getNearesPost` expects parameters (lat, len, db).
+    return getNearesPost(x, y, db)
 
 
 if __name__ == "__main__":
