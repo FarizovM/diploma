@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
+from fastapi import HTTPException
 
 def getNearesPost(x: Optional[float], y: Optional[float], db: Session):
     try:
@@ -46,7 +47,7 @@ def getNearesPost(x: Optional[float], y: Optional[float], db: Session):
 
         if x is not None and y is not None:
             query = text("""
-                WITH person AS (
+            WITH person AS (
                 SELECT ST_SetSRID(ST_MakePoint(:x, :y), 4326) AS geom
             ),
             pas AS (
@@ -164,9 +165,28 @@ def getNearesPost(x: Optional[float], y: Optional[float], db: Session):
                 else:
                     result_payload["influenceStation"] = {}
 
+            buffer_query = text("""
+                SELECT st_asgeojson(ST_Buffer(ST_SetSRID(ST_MakePoint(:x, :y), 4326)::geography, 3000)::geometry, 6, 0)::json as buffer_geom
+            """)
+            buffer_result = db.execute(buffer_query, {"x": x, "y": y}).fetchone()
+            if buffer_result:
+                result_payload["pointBuffer"] = buffer_result[0]
+
+            inf_station = result_payload.get("influenceStation", {})
+            if inf_station and "id" in inf_station:
+                lineSql = text("""
+                    SELECT ST_AsGeoJSON(ST_MakeLine(
+                        ST_SetSRID(ST_MakePoint(:x, :y), 4326),
+                        a.geom
+                    )::geometry, 6, 0)::json as line_geom
+                    FROM data_air_monitoring.air_station a
+                    WHERE a.air_station_id = :id
+                """)
+                line_result = db.execute(lineSql, {"x": x, "y": y, "id": inf_station["id"]}).fetchone()
+                if line_result and line_result[0]:
+                    result_payload["line"] = line_result[0]
+
         return {"result": result_payload, "status": 200}
         
-    except ValueError as e:
-        return {"error": str(e), "status": 500}
     except Exception as e:
-        return {"error": str(e), "status": 500}
+        raise HTTPException(status_code=500, detail=str(e))

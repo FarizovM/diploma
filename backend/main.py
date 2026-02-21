@@ -1,22 +1,16 @@
 import uvicorn
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List
+from typing import Optional
 from controllers.getNearesPost import getNearesPost
 from database import engine, get_db
 from sqlalchemy.orm import Session
 
-class Fruit(BaseModel):
-    name: str
-
-class Fruits(BaseModel):
-    fruits: List[Fruit]
 
 app = FastAPI(debug=True)
 
 origins = [
-    "http://localhost:5173",
+    "http://localhost:5174",
     # Add more origins here
 ]
 
@@ -28,19 +22,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-memory_db = {"fruits": []}
-
-@app.get("/api/fruits", response_model=Fruits)
-def get_fruits():
-    return Fruits(fruits=memory_db["fruits"])
-
-@app.post("/api/fruits")
-def add_fruit(fruit: Fruit):
-    memory_db["fruits"].append(fruit)
-    return fruit
 
 @app.get("/api/neares-post")
-def api_get_neares_post(x: float, y: float, db: Session = Depends(get_db)):
+def api_get_neares_post(x: Optional[float] = None, y: Optional[float] = None, db: Session = Depends(get_db)):
     # `getNearesPost` expects parameters (lat, len, db).
     return getNearesPost(x, y, db)
 
