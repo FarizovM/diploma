@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Tooltip, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Tooltip, useMapEvents, ImageOverlay } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -47,6 +47,8 @@ const MapComponent = () => {
   const [pointBuffer, setPointBuffer] = useState(null);
   const [lineData, setLineData] = useState(null);
   const [lineDistance, setLineDistance] = useState(null);
+  const [plumeData, setPlumeData] = useState(null);
+  const [isPlumeLoading, setIsPlumeLoading] = useState(false);
 
   const findInfluenceStation = (lat, lng) => {
     fetch(`http://localhost:8000/api/neares-post?x=${lng}&y=${lat}`)
@@ -95,6 +97,22 @@ const MapComponent = () => {
       }
     });
     return null;
+  };
+  
+  const fetchWindPlume = (lat, lng, windDir, windSpeed) => {
+    setIsPlumeLoading(true);
+    // Робимо запит до нового ендпоінта
+    fetch(`http://localhost:8000/api/plume?lat=${lat}&lng=${lng}&wind_dir=${windDir}&wind_speed=${windSpeed}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 200) {
+          setPlumeData(data.result);
+        } else {
+          alert('Помилка розрахунку фізики');
+        }
+      })
+      .catch(err => console.error(err))
+      .finally(() => setIsPlumeLoading(false));
   };
 
   useEffect(() => {
@@ -214,10 +232,40 @@ const MapComponent = () => {
             }}
             onEachFeature={(feature, layer) => {
               if (feature.properties && feature.properties.name) {
-                const windDirVal = feature.properties.wind_direction;
+                const props = feature.properties;
+                const windDirVal = props.wind_direction;
                 const windDirText = windDirVal !== null ? `${windDirVal}° (${getWindDirectionText(windDirVal)})` : 'Немає даних';
-                const windSpeedText = feature.properties.wind_speed !== null ? `${feature.properties.wind_speed} м/с` : 'Немає даних';
-                layer.bindPopup(`<b>Станція:</b> ${feature.properties.name}<br/><b>Напрямок вітру:</b> ${windDirText}<br/><b>Швидкість вітру:</b> ${windSpeedText}`);
+                const windSpeedText = props.wind_speed !== null ? `${props.wind_speed} м/с` : 'Немає даних';
+                
+                // Створюємо базовий контент
+                layer.bindPopup(`
+                  <b>Станція:</b> ${props.name}<br/>
+                  <b>Напрямок вітру:</b> ${windDirText}<br/>
+                  <b>Швидкість вітру:</b> ${windSpeedText}
+                `);
+
+                // Додаємо кнопку через подію popupopen, щоб прикріпити onClick (оскільки в bindPopup чистий HTML)
+                layer.on('popupopen', (e) => {
+                  const popupNode = e.popup._contentNode;
+                  // Перевіряємо, чи є дані про вітер, щоб малювати шлейф
+                  if (props.wind_direction !== null && props.wind_speed !== null && !popupNode.querySelector('.plume-btn')) {
+                     const btn = document.createElement('button');
+                     btn.className = 'plume-btn';
+                     btn.innerHTML = '💨 Побудувати фізичну модель шлейфу';
+                     btn.style.cssText = 'margin-top: 10px; width: 100%; padding: 5px; background: #9b59b6; color: white; border: none; border-radius: 4px; cursor: pointer;';
+                     
+                     btn.onclick = () => {
+                        // Викликаємо функцію, передаючи координати і вітер станції
+                        fetchWindPlume(
+                          feature.geometry.coordinates[1], // lat (Y)
+                          feature.geometry.coordinates[0], // lng (X)
+                          props.wind_direction,
+                          props.wind_speed
+                        );
+                     };
+                     popupNode.appendChild(btn);
+                  }
+                });
                 
                 if (feature.properties.air_station_id === highlightedStationId) {
                   layer.openPopup();
@@ -266,6 +314,15 @@ const MapComponent = () => {
               Y: {clickedPos.lat.toFixed(5)}
             </Popup>
           </Marker>
+        )}
+        {plumeData && plumeData.image && (
+          <ImageOverlay
+            key={plumeData.bounds.join(',')} // Додаємо ключ!
+            url={plumeData.image}
+            bounds={plumeData.bounds}
+            opacity={1.0}
+            zIndex={1000} // Підняли zIndex, щоб точно було поверх інших шарів
+          />
         )}
       </MapContainer>
       
