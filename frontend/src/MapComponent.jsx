@@ -82,12 +82,16 @@ const MapComponent = () => {
   };
 
   const [clickedPos, setClickedPos] = useState(null);
+  const [mouseCoords, setMouseCoords] = useState(null);
 
   const MapEvents = () => {
     useMapEvents({
       contextmenu: (e) => {
         setContextMenuPos(e.latlng);
         setClickedPos(e.latlng);
+      },
+      mousemove: (e) => {
+        setMouseCoords(e.latlng);
       }
     });
     return null;
@@ -123,7 +127,7 @@ const MapComponent = () => {
   if (error) return <div className="error">Error: {error}</div>;
 
   return (
-    <div className="map-wrapper">
+    <div className="map-wrapper" style={{ position: 'relative', height: '100%' }}>
       <MapContainer center={[47.9103, 33.3917]} zoom={11} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -264,6 +268,30 @@ const MapComponent = () => {
           </Marker>
         )}
       </MapContainer>
+      
+      {mouseCoords && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+          padding: '8px 15px',
+          borderRadius: '20px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '14px',
+          fontWeight: '500',
+          pointerEvents: 'none',
+          color: '#333'
+        }}>
+          <span>📍</span>
+          <span>X: {mouseCoords.lng.toFixed(5)}, Y: {mouseCoords.lat.toFixed(5)}</span>
+        </div>
+      )}
     </div>
   );
 };
