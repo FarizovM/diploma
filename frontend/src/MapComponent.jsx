@@ -115,6 +115,16 @@ const MapComponent = () => {
       .finally(() => setIsPlumeLoading(false));
   };
 
+  const fetchTemperaturePlume = (lat, lng, windDir, windSpeed, temp) => {
+    fetch(`http://localhost:8000/api/temperature-plume?lat=${lat}&lng=${lng}&wind_dir=${windDir}&wind_speed=${windSpeed}&air_temp=${temp}&bg_temp=0`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 200) {
+          setPlumeData(data.result);
+        }
+      });
+  };
+
   useEffect(() => {
     // Fetch nearest post data from your API
     // Adjust x, y if you want to test finding nearest stations based on a user location
@@ -265,7 +275,27 @@ const MapComponent = () => {
                      };
                      popupNode.appendChild(btn);
                   }
+                  if (props.air_temp !==null && props.wind_direction !== null && props.wind_speed !== null && !popupNode.querySelector('.temperature-plume-btn')) {
+                  const btn = document.createElement('button');
+                  btn.className = 'temperature-plume-btn';
+                  btn.innerHTML = '🌡️ Побудувати модель температурного шлейфу';
+                  btn.style.cssText = 'margin-top: 10px; width: 100%; padding: 5px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;';
+                  
+                  btn.onclick = () => {
+                     // Викликаємо функцію, передаючи координати і вітер станції
+                     fetchTemperaturePlume(
+                        feature.geometry.coordinates[1], // lat (Y)
+                        feature.geometry.coordinates[0], // lng (X)
+                        props.wind_direction,
+                        props.wind_speed,
+                        props.air_temp
+                     );
+                  };
+                  popupNode.appendChild(btn);
+                }
                 });
+
+                
                 
                 if (feature.properties.air_station_id === highlightedStationId) {
                   layer.openPopup();
