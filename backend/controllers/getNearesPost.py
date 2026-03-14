@@ -3,59 +3,76 @@ from sqlalchemy import text
 from typing import Optional
 from fastapi import HTTPException
 
+"""
+Методика вирахування: Модель спрямованого впливуЗамість того, щоб спиратися на складні фізичні моделі розсіювання (як Гауссова модель плюму, яка занадто важка для реал-тайм SQL-запитів), ми можемо використати модифікований метод зворотних зважених відстаней (IDW) із накладанням "вектора вітру".
+
+Нам потрібно вирахувати Коефіцієнт впливу (Influence Score) для кожного поста за такою логікою:
+1. Відстань ($d$): Чим далі пост, тим менший вплив (базова дифузія).
+2. Азимут ($\alpha$): Кут від поста до твого місцезнаходження.
+3. Напрямок вітру ($\omega$): Куди дме вітер. Важливо: метеорологи часто вказують, звідки дме вітер, тому переконайся, що твій кут вказує вектор руху маси повітря.
+4. Різниця кутів ($\theta$): $\theta = |\alpha - \omega|$. Якщо $\theta \approx 0^\circ$, вітер несе повітря прямо від поста до тебе. Якщо $\theta \approx 180^\circ$, вітер відносить повітря геть.
+5. Швидкість вітру ($v$): Чим сильніший вітер, тим більшу вагу має напрямок (витягує "шлейф" забруднення), і тим меншу вагу має базова дифузія в усі боки.
+
+Формула розрахунку коефіцієнта впливу:
+$$Influence = \frac{1}{d^p} \times \left( k_{base} + k_{wind} \cdot v \cdot \left( \frac{1 + \cos(\theta)}{2} \right)^n \right)$$
+"""
 def find_nearest_post(x: float, y: float, db: Session, result_payload: dict):
     query = text("""
-    WITH person AS (
-        SELECT ST_SetSRID(ST_MakePoint(:x, :y), 4326) AS geom
+    WITH target_location AS (
+        -- Задаємо координати користувача (x - довгота, y - широта)
+        SELECT ST_SetSRID(ST_MakePoint(:x, :y), 4326)::geography AS geom
     ),
-    pas AS (
-        SELECT
-            id,
-            dist_m,
-            wind_direction,
-            az_post_to_person,
-            CASE 
-                WHEN abs(abs(wind_direction+180)-az_post_to_person) > 180 
-                    THEN abs(360-(abs(abs(wind_direction+180)-az_post_to_person)))
-                ELSE abs(abs(wind_direction+180)-az_post_to_person)
-            END as corner,
-            1/dist_m as weight/*,
-            geom*/
-        FROM (
-            SELECT ap.id,
-                ap.wind_direction,
-                ST_Distance(ap.geom::geography, p.geom::geography) AS dist_m,
-                DEGREES(ST_Azimuth(ap.geom, p.geom)) AS az_post_to_person,
-                ap.geom
-            FROM (
-                SELECT 
-                    air_station_id as id, 
-                    geom, 
-                    wind_direction 
-                FROM data_air_monitoring.air_station a
-                LEFT JOIN LATERAL (
-                    SELECT wind_direction 
-                    FROM data_air_monitoring.air_station_data q 
-                    WHERE q.air_station_id=a.air_station_id
-                    ORDER BY cdate DESC 
-                    LIMIT 1
-                ) b ON true
-                WHERE wind_direction IS NOT NULL
-            ) ap
-            JOIN person p ON true
-            WHERE ST_DWithin(ap.geom::geography, p.geom::geography, 3000)  /*3 км*/
-        ) q
+    nearest_candidates AS (
+        -- ЕТАП 1: Використовуємо R-дерево (GiST індекс) для пошуку 10 найближчих постів.
+        -- Оператор <-> працює по bounding box і є надзвичайно швидким завдяки індексу GiST (R-дерево).
+        SELECT 
+            p.air_station_id as id,
+            p.geom,
+            b.wind_direction, -- кут, КУДИ дме вітер (в градусах)
+            b.wind_speed,     -- швидкість вітру (м/с)
+            p.geom <-> t.geom AS distance_meters
+        FROM 
+            data_air_monitoring.air_station p
+            LEFT JOIN LATERAL (
+                SELECT wind_direction, wind_speed
+                FROM data_air_monitoring.air_station_data q 
+                WHERE q.air_station_id=p.air_station_id
+                ORDER BY cdate DESC 
+                LIMIT 1
+            ) b ON true, 
+            target_location t
+        where wind_direction is not null
+        and (p.geom <-> t.geom) <= 3000
+        ORDER BY 
+            p.geom <-> t.geom ASC
+        LIMIT 10
     )
-    SELECT weight/b.sum_weight as influence, q.id, q.dist_m, q.wind_direction, q.az_post_to_person, q.corner, q.weight
-    FROM pas q
-    JOIN LATERAL (
-        SELECT SUM(weight) AS sum_weight FROM pas
-    ) b ON true
-    where corner between 0 and 45
-    order by corner ASC,(weight/b.sum_weight) desc, dist_m ASC
-    limit 1
+    -- ЕТАП 2: Рахуємо коефіцієнт впливу (Influence Score)
+    SELECT 
+        id,
+        distance_meters AS dist_m,
+        wind_direction,
+        wind_speed,
+        -- Рахуємо азимут від поста до користувача (переводимо радіани в градуси)
+        DEGREES(ST_Azimuth(geom::geometry, (SELECT geom::geometry FROM target_location))) AS az_post_to_person,
+        
+        -- Реалізація формули впливу
+        (1 / NULLIF(POWER(distance_meters, 1.2), 0)) * (
+            0.2 + -- k_base (базова константа дифузії)
+            0.5 * --k_wind (множник сили впливу вітру) 
+            wind_speed * POWER(
+                (COS(RADIANS(
+                    (wind_direction+180) - DEGREES(ST_Azimuth(geom::geometry, (SELECT geom::geometry FROM target_location)))
+                )) + 1) / 2, 
+                2 -- ступінь вузькості шлейфу (n)
+            )
+        ) AS influence
+
+    FROM nearest_candidates
+    ORDER BY influence DESC
+    LIMIT 1
     """)
-    
+
     influence = db.execute(query, {"x": x, "y": y}).fetchone()
 
     if influence:
@@ -63,65 +80,7 @@ def find_nearest_post(x: float, y: float, db: Session, result_payload: dict):
         inf_dict["influence_station"] = True
         result_payload["influenceStation"] = inf_dict
     else:
-        nearestStationSQL = text("""
-            WITH person AS (
-            SELECT ST_SetSRID(ST_MakePoint(:x, :y), 4326) AS geom
-        ),
-        pas AS (
-            SELECT
-                id,
-                dist_m,
-                wind_direction,
-                az_post_to_person,
-                CASE 
-                    WHEN abs(abs(wind_direction+180)-az_post_to_person) > 180 
-                        THEN abs(360-(abs(abs(wind_direction+180)-az_post_to_person)))
-                    ELSE abs(abs(wind_direction+180)-az_post_to_person)
-                END as corner,
-                1/dist_m as weight/*,
-                geom*/
-            FROM (
-                SELECT ap.id,
-                    ap.wind_direction,
-                    ST_Distance(ap.geom::geography, p.geom::geography) AS dist_m,
-                    DEGREES(ST_Azimuth(ap.geom, p.geom)) AS az_post_to_person,
-                    ap.geom
-                FROM (
-                    SELECT 
-                        air_station_id as id, 
-                        geom, 
-                        wind_direction 
-                    FROM data_air_monitoring.air_station a
-                    LEFT JOIN LATERAL (
-                        SELECT wind_direction 
-                        FROM data_air_monitoring.air_station_data q 
-                        WHERE q.air_station_id=a.air_station_id
-                        ORDER BY cdate DESC 
-                        LIMIT 1
-                    ) b ON true
-                    WHERE wind_direction IS NOT NULL
-                ) ap
-                JOIN person p ON true
-                WHERE ST_DWithin(ap.geom::geography, p.geom::geography, 3000)  /*3 км*/
-            ) q
-        )
-        SELECT weight/b.sum_weight as influence, q.id, q.dist_m, q.wind_direction, q.az_post_to_person, q.corner, q.weight
-        FROM pas q
-        JOIN LATERAL (
-            SELECT SUM(weight) AS sum_weight FROM pas
-        ) b ON true
-        order by corner ASC,(weight/b.sum_weight) desc, dist_m ASC
-        limit 1 
-        """)
-        
-        nearest = db.execute(nearestStationSQL, {"x": x, "y": y}).fetchone()
-        
-        if nearest:
-            near_dict = dict(nearest._mapping)
-            near_dict["nearest_station"] = True
-            result_payload["influenceStation"] = near_dict
-        else:
-            result_payload["influenceStation"] = {}
+        result_payload["influenceStation"] = {}
 
     # Побудова буфера навколо точки
     buffer_query = text("""
