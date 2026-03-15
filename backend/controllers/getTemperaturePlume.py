@@ -25,18 +25,18 @@ def generate_temperature_plume(lat_source: float, lng_source: float, wind_dir: f
     u = max(wind_speed, 0.5)
     downwind_safe = np.clip(downwind, 100, None)
     
-    # 1. Дифузія (Теплопровідність): розширення теплового сліду
+    # Дифузія (Теплопровідність): розширення теплового сліду
     # Тепло розсіюється ширше і рівномірніше, ніж пил, тому коефіцієнт більший
     sigma_y = 200 + (0.5 / np.sqrt(u)) * downwind_safe
     
-    # 2. Розрахунок впливу (від 0 до 1) за рівнянням адвекції-дифузії
+    # Розрахунок впливу (від 0 до 1) за рівнянням адвекції-дифузії
     influence = np.zeros_like(downwind)
     valid = downwind > 0
     
     influence[valid] = (1.0 / (np.sqrt(2 * np.pi) * u * sigma_y[valid] / 500)) * \
                        np.exp(- (crosswind[valid]**2) / (2 * sigma_y[valid]**2))
 
-    # 3. Втрата тепла (охолодження/нагрівання до фонової температури)
+    # Втрата тепла (охолодження/нагрівання до фонової температури)
     # З відстанню вплив станції експоненційно падає
     decay_rate = 0.0008 / u
     influence[valid] *= np.exp(-decay_rate * downwind[valid])
@@ -46,19 +46,17 @@ def generate_temperature_plume(lat_source: float, lng_source: float, wind_dir: f
     if max_inf > 0:
         influence = influence / max_inf
 
-    # 4. ОБЧИСЛЕННЯ РЕАЛЬНОЇ ТЕМПЕРАТУРИ В КОЖНІЙ ТОЧЦІ
+    # Обчислення реальної температури в кожній точці
     # T = Фонова температура + (Різниця температур * Коефіцієнт впливу)
     delta_T = air_temp - bg_temp
     temperature_grid = bg_temp + (delta_T * influence)
 
-    # ==========================================
-    # ВІЗУАЛІЗАЦІЯ МЕТЕОРОЛОГІЧНОЇ КАРТИ
-    # ==========================================
+    # Формуємо зображення
     fig, ax = plt.subplots(figsize=(7, 7), dpi=300)
     ax.axis('off')
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
     
-    # Використовуємо метеорологічну палітру RdYlBu_r (від синього до червоного)
+    # Використовуємо метеорологічну палітру
     cmap = plt.get_cmap('RdYlBu_r')
     
     # Робимо альфа-канал (прозорість) залежним від сили впливу, 
@@ -72,7 +70,7 @@ def generate_temperature_plume(lat_source: float, lng_source: float, wind_dir: f
                    origin='lower', cmap='RdYlBu_r', vmin=-10, vmax=40, 
                    interpolation='bicubic', alpha=influence * 0.85)
 
-    # ДОДАЄМО ІЗОТЕРМИ (Лінії однакової температури)
+    # Додаємо ізолінії
     # Зробимо так, щоб лінії малювалися кожні 0.5 або 1 градус
     if abs(delta_T) > 1:
         step = 0.5 if abs(delta_T) < 5 else 1.0

@@ -114,6 +114,7 @@ def getNearesPost(x: Optional[float], y: Optional[float], db: Session):
         if y is not None:
             y = float(y)
 
+        # Отримання всіх станцій у форматі GeoJSON
         geojsonSql = text("""
             SELECT 
                 'FeatureCollection' As type, 
@@ -148,7 +149,7 @@ def getNearesPost(x: Optional[float], y: Optional[float], db: Session):
             "geojson": dict(geojson_result._mapping) if geojson_result else {}
         }
 
-
+    
         if x is not None and y is not None:
             find_nearest_post(x, y, db, result_payload)
 

@@ -29,8 +29,6 @@ def generate_plume_image(lat_source: float, lng_source: float, wind_dir: float, 
     downwind_safe = np.clip(downwind, 100, None)
 
     # Коефіцієнт розширення
-    # Розширюємо шлейф. Базова ширина 150м + розширення від вітру.
-    # Це не дасть шлейфу стати тоншим за 1 піксель екрану.
     sigma_y = 100 + (0.3 / np.sqrt(u)) * downwind_safe
 
     concentration = np.zeros_like(downwind)
@@ -51,34 +49,31 @@ def generate_plume_image(lat_source: float, lng_source: float, wind_dir: float, 
     if max_c > 0:
         concentration = concentration / max_c
 
-    # ==========================================
-    # 5. МАЛЮВАННЯ: Створюємо виразну красу
-    # ==========================================
-    # Вища роздільна здатність (dpi=300)
+    # Формуємо зображення
     fig, ax = plt.subplots(figsize=(6, 6), dpi=300) 
     ax.axis('off')
     fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
     
-    # Беремо теплову палітру 'turbo' (дуже виразна для ГІС)
+    # Беремо теплову палітру
     base_cmap = plt.get_cmap('turbo')
     cmap_colors = base_cmap(np.arange(base_cmap.N))
     
     # Створюємо математично плавне згасання прозорості (Alpha-каналу)
-    # Зробимо так, щоб слабкий вплив ставав 100% прозорим, а епіцентр мав прозорість 85%
+    # Слабкий вплив ставав 100% прозорим, а епіцентр мав прозорість 85%
     alphas = np.power(np.linspace(0, 1, base_cmap.N), 1.5) * 0.85
     cmap_colors[:, -1] = alphas
     smooth_cmap = LinearSegmentedColormap.from_list("smooth_turbo", cmap_colors)
 
-    # Накладаємо шлейф з 'bicubic' інтерполяцією для ідеально шовкового переходу кольорів
+    # Накладаємо шлейф з інтерполяцією для ідеально шовкового переходу кольорів
     ax.imshow(concentration, extent=[lng_min, lng_max, lat_min, lat_max], 
               origin='lower', cmap=smooth_cmap, interpolation='bicubic')
 
-    # ДОДАЄМО ІЗОЛІНІЇ (тонкі білі контури рівнів впливу)
+    # Додаємо ізолінії
     # Вони показуватимуть межі 10%, 30%, 50%, 70% та 90% концентрації
     levels = [0.1, 0.3, 0.5, 0.7, 0.9] 
     ax.contour(x, y, concentration, levels=levels, colors='white', linewidths=0.8, alpha=0.5)
 
-    # 6. Збереження і кодування
+    # Збереження і кодування
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=True)
     plt.close(fig)
